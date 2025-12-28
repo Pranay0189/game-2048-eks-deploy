@@ -1,0 +1,75 @@
+pipeline {
+    agent any
+
+    tools {
+        nodejs "Node"
+    }
+
+    environment {
+        IMAGE_NAME = "game-2048"
+        DOCKER_IMAGE = "pranay0189/${IMAGE_NAME}"
+        IMAGE_TAG = "${BUILD_NUMBER}"   
+    }
+
+    stages {
+        stage ("code checkout") {
+            steps {
+                git branch: 'main', url: 'https://github.com/Pranay0189/game-2048-eks-deploy.git'
+            }
+        }
+
+        stage ("install dependencies") {
+            steps {
+                sh 'npm install'
+            }
+        }
+
+        stage ("run tests") {
+            steps {
+                sh 'npm run test'
+            }
+        }
+
+        stage ("build") {
+            steps {
+                sh 'npm run build'
+            }
+        }
+
+        stage ("docker login"){
+            withCredentials([usernamePassword(
+                credentialsId: 'docker-credentials',
+                usernameVariable: "DOCKER_USER",
+                passwordVariable: "DOCKER_PASS"
+            )]) {
+                sh '''
+                    echo "$DOCKER_PASS" | docker login -u "$DOCKER_USER" --password-stdin
+                '''
+            }
+        }
+
+        stage("docker build") {
+            steps {
+                sh '''
+                    docker build -t ${DOCKER_IMAGE}:${IMAGE_TAG} .
+                    '''
+            }
+        }
+
+        stage("trivy scan") {
+            steps {
+                sh '''
+                    trivy image --severity HIGH,CRITICAL --exit-code 1 ${DOCKER_IMAGE}:${IMAGE_TAG}
+                    '''
+            }
+        }
+
+        stage("docker push"){
+            steps {
+                sh '''
+                    docker push -t ${DOCKER_IMAGE}:${IMAGE_TAG}
+                    '''
+            }
+        }
+    }
+}
